@@ -46,8 +46,10 @@ Every request screens the vessel against:
 | Field | Type | Description |
 |-------|------|-------------|
 | `imo` | string | 7-digit IMO number queried |
-| `sanctions.status` | `GREEN` \| `AMBER` \| `RED` | Sanctions screening result |
+| `sanctions.status` | `GREEN` \| `AMBER` \| `INCOMPLETE` \| `RED` | Sanctions screening result |
 | `sanctions.detail` | string | Human-readable explanation |
+| `sanctions.coverageComplete` | boolean | `true` only when every sanctions source loaded. `false` when a supplementary source was unavailable for this check |
+| `sanctions.coverageGaps` | string[] | Names of any sources that did not load (empty when `coverageComplete`) |
 | `ownership.opacity` | `LOW` \| `MEDIUM` \| `HIGH` | Corporate ownership transparency level |
 | `ownership.score` | number (0-100) | Opacity score. 0 = fully transparent, 100 = completely opaque |
 | `vetting.grade` | `A` \| `B` \| `C` \| `D` \| `E` | Overall vetting grade |
@@ -60,8 +62,9 @@ Every request screens the vessel against:
 
 | Status | Meaning |
 |--------|---------|
-| `GREEN` | No matches found across any sanctions database |
+| `GREEN` | No matches found across the comprehensive sanctions sources, which all loaded |
 | `AMBER` | Low-confidence or fuzzy matches found — manual review recommended |
+| `INCOMPLETE` | The screen could **not** be attested as clear — a core source was unreachable, the screen failed, or the vessel identity was unresolved. **Not a clearance**; re-check before relying on it |
 | `RED` | Direct match on one or more sanctions lists — **do not proceed without legal review** |
 
 ### Ownership opacity
@@ -136,7 +139,7 @@ done
 function checkVessel(imo) {
   const response = UrlFetchApp.fetch(`https://arcnautical.com/api/v1/vessels/${imo}/check`);
   const data = JSON.parse(response.getContentText());
-  return data.sanctions.status; // Returns "GREEN", "AMBER", or "RED"
+  return data.sanctions.status; // "GREEN", "AMBER", "INCOMPLETE", or "RED"
 }
 ```
 
