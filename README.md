@@ -87,7 +87,7 @@ Every request screens the vessel against:
 
 ## Rate limits
 
-- **200 requests per hour** per IP address
+- **100 requests per hour** per IP address
 - Results are cached for 1 hour per IMO number
 - No API key required
 
@@ -98,7 +98,7 @@ limit by being refused:
 |--------|---------|
 | `X-RateLimit-Limit` | Requests allowed per hour |
 | `X-RateLimit-Remaining` | Requests left in the current window |
-| `X-RateLimit-Reset` | ISO 8601 timestamp when the window resets |
+| `X-RateLimit-Reset` | ISO 8601 timestamp when the next slot frees. The window slides, so this is when the oldest request ages out — not a fixed hourly boundary |
 
 A refused request answers `429` with the same headers plus `Retry-After`.
 
