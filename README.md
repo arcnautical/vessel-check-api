@@ -87,9 +87,20 @@ Every request screens the vessel against:
 
 ## Rate limits
 
-- **100 requests per hour** per IP address
+- **200 requests per hour** per IP address
 - Results are cached for 1 hour per IMO number
 - No API key required
+
+Every response tells you where you stand, so you never have to discover the
+limit by being refused:
+
+| Header | Meaning |
+|--------|---------|
+| `X-RateLimit-Limit` | Requests allowed per hour |
+| `X-RateLimit-Remaining` | Requests left in the current window |
+| `X-RateLimit-Reset` | ISO 8601 timestamp when the window resets |
+
+A refused request answers `429` with the same headers plus `Retry-After`.
 
 Need higher limits? [Contact us](mailto:admin@arcnautical.com) for enterprise API access.
 
