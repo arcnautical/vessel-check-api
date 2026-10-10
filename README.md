@@ -1,145 +1,163 @@
 # Vessel Check API
 
-Free, open API for instant vessel sanctions screening, ownership transparency, and vetting intelligence.
-
-**No API key required. No signup. No rate limit registration.**
+Screen a ship by IMO number for sanctions, ownership opacity and a vetting grade. The first call needs no key and no signup.
 
 ```bash
 curl https://arcnautical.com/api/v1/vessels/9034690/check
 ```
 
+The response, abridged (live on 2026-10-10):
+
 ```json
 {
   "imo": "9034690",
+  "vesselName": "LUMA",
+  "checkDigitValid": true,
   "sanctions": {
     "status": "RED",
-    "detail": "1 match found"
+    "detail": "2 confirmed matches on vessel identifier.",
+    "coverageComplete": true,
+    "coverageGaps": []
   },
-  "ownership": {
-    "opacity": "MEDIUM",
-    "score": 60
-  },
-  "vetting": {
-    "grade": "B",
-    "score": 36,
-    "status": "marginal"
-  },
-  "checkedAt": "2026-03-22T17:45:52.419Z",
-  "provider": "ArcNautical",
-  "fullReport": "https://arcnautical.com/check?imo=9034690"
+  "ownership": { "opacity": "HIGH", "score": 100 },
+  "ownershipFactors": [
+    { "label": "Owner not identified, so no LEI (GLEIF) lookup was possible", "points": 35 },
+    { "label": "Flag jurisdiction VU — Tier 3 — Opaque", "points": 25 },
+    { "label": "No public beneficial-ownership record on a flag-of-convenience register", "points": 10 },
+    { "label": "OFAC-designated entity in ownership chain (chain-sanctions floor applied)", "points": 30 }
+  ],
+  "vetting": { "grade": "E", "score": 90, "status": "unacceptable" },
+  "assessed": true,
+  "checkedAt": "2026-10-10T18:45:05.318Z",
+  "fullReport": "https://arcnautical.com/check?imo=9034690",
+  "tier": "keyless"
 }
 ```
 
-## What it checks
+The full API reference is at **[arcnautical.com/developers](https://arcnautical.com/developers/)**. The OpenAPI 3.1 spec is at [`/api/v1/openapi.json`](https://arcnautical.com/api/v1/openapi.json).
 
-Every request screens the vessel against:
+## What one call checks
 
-- **OFAC SDN** — U.S. Treasury Specially Designated Nationals list
-- **EU Financial Sanctions** — European Union consolidated sanctions
-- **UN Security Council** — United Nations consolidated list
-- **OpenSanctions Maritime** — 3,700+ vessels, 3,300+ companies from aggregated global sanctions data
-- **GLEIF** — Global Legal Entity Identifier Foundation for corporate ownership chain verification
-- **Equasis PSC** — Port State Control detention and inspection records (when available)
+- **Sanctions.** Five lists: OFAC SDN, UK OFSI, EU Financial Sanctions (FSD), the UN Security Council Consolidated List, and OpenSanctions' maritime dataset. The hull is matched on its IMO number, its current name and the other names our sources hold for it. A former name that none of our sources holds is not screened, so a ship renamed after a designation under a name we never saw can still read `GREEN`.
+- **Ownership opacity.** A 0-100 score for how much of the ownership is on the public record: whether the owner has a GLEIF LEI, how transparent the flag register is, and whether a designated company sits in the chain. `ownershipFactors` lists the lines the score is the sum of.
+- **Vetting grade.** A to E, a composite of five factors: detention history, flag performance, vessel age, inspection gap and ownership opacity. Detention and inspection history comes from port state control records. Which regimes we cover, and the gaps, are listed in the [methodology](https://arcnautical.com/methodology.html).
 
-## Response format
+## Response fields
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `imo` | string | 7-digit IMO number queried |
-| `sanctions.status` | `GREEN` \| `AMBER` \| `INCOMPLETE` \| `RED` | Sanctions screening result |
-| `sanctions.detail` | string | Human-readable explanation |
-| `sanctions.coverageComplete` | boolean | `true` only when every sanctions source loaded. `false` when a supplementary source was unavailable for this check |
-| `sanctions.coverageGaps` | string[] | Names of any sources that did not load (empty when `coverageComplete`) |
-| `ownership.opacity` | `LOW` \| `MEDIUM` \| `HIGH` | Corporate ownership transparency level |
-| `ownership.score` | number (0-100) | Opacity score. 0 = fully transparent, 100 = completely opaque |
-| `vetting.grade` | `A` \| `B` \| `C` \| `D` \| `E` | Overall vetting grade |
-| `vetting.score` | number (0-100) | Composite vetting score |
-| `vetting.status` | string | `acceptable`, `marginal`, `substandard`, or `unacceptable` |
-| `checkedAt` | ISO 8601 | Timestamp of the check |
-| `fullReport` | URL | Link to full interactive dossier |
+| Field | Type | Meaning |
+|---|---|---|
+| `imo` | string | The seven-digit IMO that was screened |
+| `vesselName` | string \| null | The name our sources hold for this hull, so you can confirm which ship was screened. `null` when no source names it |
+| `alsoRecordedAs` | array | Other names our sources hold for the hull, each with its source. Every one was screened on this call |
+| `identityBasis` | `sources` \| `user` \| `none` | `sources` means our records name the hull. `none` means nothing named it: its identifiers were screened, a name was not |
+| `checkDigitValid` | boolean | `false` when the IMO fails its check digit. That is almost always a typo |
+| `sanctions.status` | `RED` \| `AMBER` \| `INCOMPLETE` \| `GREEN` | See below |
+| `sanctions.detail` | string | The verdict in a sentence |
+| `sanctions.coverageComplete` | boolean | `true` when every sanctions list loaded |
+| `sanctions.coverageGaps` | string[] | The lists that did not load |
+| `ownership.opacity` | `LOW` \| `MEDIUM` \| `HIGH` \| null | Opacity band |
+| `ownership.score` | number \| null | 0 = transparent, 100 = opaque |
+| `ownershipFactors` | array \| null | The lines `ownership.score` is the sum of, with their points. Labels are for people to read, not codes to parse |
+| `vetting.grade` | `A`-`E` \| null | Vetting grade |
+| `vetting.score` | number \| null | 0-100, lower is better |
+| `vetting.status` | string | `acceptable`, `marginal`, `substandard`, `unacceptable`, or `not_assessed` |
+| `assessed` | boolean | `false` means ownership and vetting were not measured: their values are `null`, with no stand-in. The sanctions verdict is unaffected |
+| `checkedAt` | ISO 8601 | When the check ran |
+| `fullReport` | URL | The human-readable report for this hull |
+| `tier` / `tierDetail` | string | Always `keyless` here, and what a free key adds |
 
 ### Sanctions status
 
 | Status | Meaning |
-|--------|---------|
-| `GREEN` | No matches found across the comprehensive sanctions sources, which all loaded |
-| `AMBER` | Low-confidence or fuzzy matches found — manual review recommended |
-| `INCOMPLETE` | The screen could **not** be attested as clear — a core source was unreachable, the screen failed, or the vessel identity was unresolved. **Not a clearance**; re-check before relying on it |
-| `RED` | Direct match on one or more sanctions lists — **do not proceed without legal review** |
+|---|---|
+| `RED` | Confirmed match. Do not proceed without legal review |
+| `AMBER` | Possible match that needs a person to review it |
+| `INCOMPLETE` | No match, but the screen cannot be called clear. A core list (OFAC SDN, OpenSanctions, EU FSD) did not load, or no source could name the hull, or the IMO fails its check digit. `detail` says which. **Never treat it as clear.** It is never cached, so a retry gets a fresh screen |
+| `GREEN` | No match on the lists that loaded. If `coverageComplete` is `false`, one supplementary list was unavailable: re-screen rather than treat it as a clean pass |
 
 ### Ownership opacity
 
-| Level | Score | What it means |
-|-------|-------|---------------|
-| `LOW` | 0-30 | Registered owner has a GLEIF LEI record, verifiable parent chain, transparent jurisdiction |
-| `MEDIUM` | 31-60 | Partial transparency — some ownership data available but gaps exist |
-| `HIGH` | 61-100 | No GLEIF record, shell company jurisdiction (Marshall Islands, Panama, Liberia, BVI, etc.), unverifiable ownership chain |
+| Band | Score |
+|---|---|
+| `LOW` | 0-30 |
+| `MEDIUM` | 31-60 |
+| `HIGH` | 61-100 |
+
+Opacity measures the public record, not wrongdoing. Ordinary tonnage on an open register can score `HIGH` simply because the owner has no LEI. Read `ownershipFactors` to see why.
 
 ### Vetting grade
 
-| Grade | Score | Interpretation |
-|-------|-------|---------------|
-| A | 0-20 | Low risk — clean detention record, transparent ownership, reputable flag state |
-| B | 21-40 | Acceptable — minor risk factors present |
-| C | 41-60 | Marginal — elevated risk, enhanced due diligence recommended |
-| D | 61-80 | Substandard — significant risk factors, proceed with caution |
-| E | 81-100 | Unacceptable — major risk indicators, strong recommendation against engagement |
+| Grade | Score | `vetting.status` |
+|---|---|---|
+| A | 0-20 | `acceptable` |
+| B | 21-40 | `acceptable` |
+| C | 41-60 | `marginal` |
+| D | 61-80 | `substandard` |
+| E | 81-100 | `unacceptable` |
 
-## Rate limits
+## Limits
 
-- **100 requests per hour** per IP address
-- Results are cached for 1 hour per IMO number
-- No API key required
+- **100 requests an hour per IP address.** The `X-RateLimit-Limit`, `X-RateLimit-Remaining` and `X-RateLimit-Reset` headers on every response are the authority. The window slides, so `X-RateLimit-Reset` is when your oldest request ages out.
+- A refused request gets `429` with `Retry-After`. A tight loop is refused before the hourly allowance is spent. Honor `Retry-After` and the loop completes.
+- A hull anyone checked in the last hour answers from cache. A hull that needs a fresh screen waits for one of a few screening slots shared by every keyless caller. If none frees up in time you get `503 keyless_busy` with `Retry-After`, and it does not count against your allowance.
+- An IMO without exactly one seven-digit number in it gets `400 invalid_imo`, which does not count either. `9811000` and `IMO9811000` both work.
+- The keyless check is a sample for evaluation and occasional lookups, not a data feed. An automated client that runs a product on it can be held to a small monthly sample. The refusal names the free key that replaces it.
 
-Every response tells you where you stand, so you never have to discover the
-limit by being refused:
+Every limit and error code is documented at [arcnautical.com/developers](https://arcnautical.com/developers/).
 
-| Header | Meaning |
-|--------|---------|
-| `X-RateLimit-Limit` | Requests allowed per hour |
-| `X-RateLimit-Remaining` | Requests left in the current window |
-| `X-RateLimit-Reset` | ISO 8601 timestamp when the next slot frees. The window slides, so this is when the oldest request ages out — not a fixed hourly boundary |
+## With a free key
 
-A refused request answers `429` with the same headers plus `Retry-After`.
+A self-serve API key is free, with no card. `POST /api/v1/screenings` runs the same engine and returns the full record the keyless check leaves out: every sanctions match with its list, programme and confidence class, each source reported separately, the five weighted vetting factors, and a stored screening record you can cite later. The same key does batches of 50, standing monitors, fleets, signed webhooks and voyage risk scoring.
 
-Need higher limits? [Contact us](mailto:admin@arcnautical.com) for enterprise API access.
+Get one at **[arcnautical.com/get-a-key](https://arcnautical.com/get-a-key?from=github)**.
 
-## Usage examples
+## Examples
 
 ### Python
 
 ```python
 import requests
 
-response = requests.get("https://arcnautical.com/api/v1/vessels/9034690/check")
-data = response.json()
+r = requests.get("https://arcnautical.com/api/v1/vessels/9034690/check", timeout=30)
+if r.status_code == 429:
+    raise SystemExit(f"Rate limited, retry in {r.headers.get('Retry-After')} s")
+r.raise_for_status()
+v = r.json()
 
-if data["sanctions"]["status"] == "RED":
-    print(f"WARNING: Vessel IMO {data['imo']} has sanctions matches!")
-    print(f"Details: {data['sanctions']['detail']}")
+status = v["sanctions"]["status"]
+if status in ("RED", "AMBER"):
+    print(f"Review IMO {v['imo']} ({v['vesselName']}): {v['sanctions']['detail']}")
+elif status == "INCOMPLETE":
+    print(f"Not a clearance: {v['sanctions']['detail']}")
+elif not v["sanctions"]["coverageComplete"]:
+    print(f"Clear on the lists that loaded; missing {v['sanctions']['coverageGaps']}. Re-screen.")
+else:
+    print(f"No match for IMO {v['imo']} ({v['vesselName']})")
 ```
 
-### JavaScript / Node.js
+### JavaScript
 
 ```javascript
-const response = await fetch("https://arcnautical.com/api/v1/vessels/9034690/check");
-const data = await response.json();
+const res = await fetch("https://arcnautical.com/api/v1/vessels/9034690/check");
+const v = await res.json();
 
-console.log(`Sanctions: ${data.sanctions.status}`);
-console.log(`Ownership Opacity: ${data.ownership.opacity} (${data.ownership.score}/100)`);
-console.log(`Vetting Grade: ${data.vetting.grade}`);
+console.log(`Sanctions: ${v.sanctions.status}`);
+if (v.assessed) {
+  console.log(`Ownership opacity: ${v.ownership.opacity} (${v.ownership.score}/100)`);
+  console.log(`Vetting grade: ${v.vetting.grade} (${v.vetting.status})`);
+} else {
+  console.log("Ownership and vetting: not assessed");
+}
 ```
 
 ### cURL
 
 ```bash
-# Check a specific vessel
-curl -s https://arcnautical.com/api/v1/vessels/9811000/check | jq .
+curl -s https://arcnautical.com/api/v1/vessels/9811000/check | jq '{imo, vesselName, sanctions: .sanctions.status, grade: .vetting.grade}'
 
-# Batch check (shell script)
-for imo in 9034690 9811000 9295345 9703318; do
-  echo "=== IMO $imo ==="
-  curl -s "https://arcnautical.com/api/v1/vessels/$imo/check" | jq '{imo, sanctions: .sanctions.status, grade: .vetting.grade}'
+# A few hulls, one after another
+for imo in 9034690 9811000 9703318; do
+  curl -s "https://arcnautical.com/api/v1/vessels/$imo/check" | jq -c '{imo, vesselName, sanctions: .sanctions.status}'
   sleep 1
 done
 ```
@@ -147,56 +165,31 @@ done
 ### Google Sheets (Apps Script)
 
 ```javascript
-function checkVessel(imo) {
-  const response = UrlFetchApp.fetch(`https://arcnautical.com/api/v1/vessels/${imo}/check`);
-  const data = JSON.parse(response.getContentText());
-  return data.sanctions.status; // "GREEN", "AMBER", "INCOMPLETE", or "RED"
+function VESSEL_SANCTIONS(imo) {
+  const res = UrlFetchApp.fetch(`https://arcnautical.com/api/v1/vessels/${imo}/check`);
+  return JSON.parse(res.getContentText()).sanctions.status; // RED, AMBER, INCOMPLETE or GREEN
 }
 ```
 
-## Try these vessels
+## From an AI agent (MCP)
 
-| IMO | Vessel | What you'll see |
-|-----|--------|----------------|
-| `9034690` | LUMA | Sanctions: **RED** — OFAC-designated Feb 2026 (Iran sanctions) |
-| `9811000` | EVER GIVEN | Sanctions: **GREEN** — clean record |
-| `9295345` | KALLISTA | Ownership opacity: **HIGH** — Altomare SA / OFAC identity theft case |
-| `9703318` | MSC OSCAR | One of the world's largest container ships |
+The same check is an MCP tool. Add the remote endpoint `https://mcp.arcnautical.com/mcp` with no authentication and `check_vessel` and `find_port` work at once. To run it locally instead: `npx -y @arcnautical/mcp`. Setup for Claude, ChatGPT, Cursor and others: [arcnautical.com/developers/#mcp](https://arcnautical.com/developers/#mcp).
 
-## Data sources
+## Try these
 
-All data is sourced from publicly available databases:
+| IMO | Vessel | What you will see |
+|---|---|---|
+| `9034690` | LUMA | `RED`: confirmed matches on the vessel identifier |
+| `9811000` | EVER GIVEN | `GREEN`, grade A, opacity `HIGH` (70): a clean ship whose ownership is not on the public record |
+| `9703318` | MSC ZOE | `GREEN`, grade A |
+| `9295345` | none | `INCOMPLETE`: the number fails its IMO check digit, so it belongs to no vessel |
 
-- [OFAC SDN List](https://ofac.treasury.gov/specially-designated-nationals-and-blocked-persons-list-sdn-human-readable-lists) — U.S. Treasury
-- [EU Financial Sanctions](https://data.europa.eu/data/datasets/consolidated-list-of-persons-groups-and-entities-subject-to-eu-financial-sanctions) — European Commission
-- [UN Security Council Consolidated List](https://www.un.org/securitycouncil/content/un-sc-consolidated-list) — United Nations
-- [OpenSanctions](https://www.opensanctions.org/) — Aggregated global sanctions data (maritime dataset)
-- [GLEIF](https://www.gleif.org/) — Legal Entity Identifier Foundation
-- [Equasis](https://www.equasis.org/) — Port State Control inspection data
+These were the answers on 2026-10-10. Verdicts change when the lists change.
 
-## Full platform
+## Data
 
-This free API provides a traffic-light summary. For full vessel intelligence including:
+Sanctions lists from the US Treasury (OFAC), HM Treasury (OFSI), the European Union, the UN Security Council and [OpenSanctions](https://www.opensanctions.org/). Ownership data from [GLEIF](https://www.gleif.org/). Port state control records from the MoU regimes named in the [methodology](https://arcnautical.com/methodology.html).
 
-- Detailed sanctions match evidence (which lists, confidence scores, matched entities)
-- Complete corporate ownership chain with GLEIF parent walking
-- Shell company jurisdiction detection and opacity scoring
-- PSC detention history and detention probability model
-- Route-level voyage risk scoring (10 intelligence signals, 500 Monte Carlo simulations)
-- Downloadable PDF dossier reports
-- Fleet monitoring with automated alerts
-- RESTful API with webhook delivery
+Use of the API is covered by the [terms of service](https://arcnautical.com/terms.html). Questions: admin@arcnautical.com.
 
-Visit [arcnautical.com](https://arcnautical.com) or try the [interactive vessel check](https://arcnautical.com/check).
-
-## About
-
-Built by [ArcNautical](https://arcnautical.com) — maritime risk intelligence for insurers, compliance teams, and fleet managers.
-
-Contact: admin@arcnautical.com
-
-## License
-
-The API is free to use for any purpose. No attribution required, but appreciated.
-
-Data sources retain their original licenses. OFAC, EU, and UN sanctions data is public domain. OpenSanctions data is licensed under CC BY 4.0. GLEIF data is subject to GLEIF terms of use.
+Built by [ArcNautical](https://arcnautical.com).
